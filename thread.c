@@ -85,9 +85,10 @@ void thread_sleep(int64_t ticks){
    old_level = intr_disable();
    if (cur != idle_thread){
        //list_push_back(&sleeping_list, &cur->elem);
-       list_insert_ordered(&sleeping_list, &cur->elem, cmp_ticks, NULL);  
+       //list_insert_ordered(&sleeping_list, &cur->elem, cmp_ticks, NULL);  
        cur->status = THREAD_SLEEPING;
-       cur->wake_time = timer_ticks() + ticks;
+       cur->wake_time = timer_ticks() + ticks; 
+       list_insert_ordered(&sleeping_list, &cur->elem, cmp_ticks, NULL);  
        schedule();
    }
    intr_set_level(old_level);
@@ -112,6 +113,7 @@ thread_init (void)
 
   lock_init (&tid_lock);
   list_init (&ready_list);
+  list_init (&sleeping_list);
   list_init (&all_list);
 
   /* Set up a thread structure for the running thread. */
@@ -606,7 +608,7 @@ schedule (void)
       e = list_next(e);
       list_remove(temp);
       list_push_back(&ready_list,&t->elem);
-    }else break;;
+    }else break;
    }
 
   struct thread *next = next_thread_to_run ();
