@@ -61,6 +61,8 @@ bool thread_mlfqs;
 
 static void kernel_thread (thread_func *, void *aux);
 
+static bool cmp_ticks (const struct list_elem *, const struct list_elem *,
+                        void *);
 static void idle (void *aux UNUSED);
 static struct thread *running_thread (void);
 static struct thread *next_thread_to_run (void);
@@ -70,27 +72,26 @@ static void *alloc_frame (struct thread *, size_t size);
 static void schedule (void);
 void thread_schedule_tail (struct thread *prev);
 static tid_t allocate_tid (void);
-
-/* List of sleeping process*/
-//static struct list sleeping_list;
-
-/* Let current running thread sleep for TIMER ticks by pushing
-   current thread to sleeping list, set status as Thread sleeping
-   and wake time as current time plus ticks
+/*
+  A list used to store the sleeping thread
 */
-void thread_sleep(int64_t ticks){
-    struct thread *cur = thread_current();
-    enum intr_level old_level;
-    old_level = intr_disable();
-    if(cur != idle_thread){
-     //  list_push_back(&sleeping_list, &cur->elem);
-       list_insert_ordered(&sleeping_list,&cur->elem,cmp_ticks,NULL);
-       cur->status = THREAD_SLEEPING;
-       cur->wake_time = timer_ticks() + ticks;
-       schedule();
+static struct list sleeping_list;
 
-    }
-    intr_set_level(old_level);
+/* Make current thread transfer to sleep state*/
+void thread_sleep(int64_t ticks){
+   struct thread *cur = thread_current();
+   enum intr_level old_level;
+
+   old_level = intr_disable();
+   if (cur != idle_thread){
+       //list_push_back(&sleeping_list, &cur->elem);
+       //list_insert_ordered(&sleeping_list, &cur->elem, cmp_ticks, NULL);  
+       cur->status = THREAD_SLEEPING;
+       cur->wake_time = timer_ticks() + ticks; 
+       list_insert_ordered(&sleeping_list, &cur->elem, cmp_ticks, NULL);  
+       schedule();
+   }
+   intr_set_level(old_level);
 }
 /* Initializes the threading system by transforming the code
    that's currently running into a thread.  This can't work in
@@ -112,8 +113,9 @@ thread_init (void)
 
   lock_init (&tid_lock);
   list_init (&ready_list);
-  list_init (&all_list);
   list_init (&sleeping_list);
+  list_init (&all_list);
+
   /* Set up a thread structure for the running thread. */
   initial_thread = running_thread ();
   init_thread (initial_thread, "main", PRI_DEFAULT);
@@ -192,6 +194,7 @@ thread_create (const char *name, int priority,
   struct switch_entry_frame *ef;
   struct switch_threads_frame *sf;
   tid_t tid;
+  enum intr_level old_level;
 
   ASSERT (function != NULL);
 
@@ -203,6 +206,11 @@ thread_create (const char *name, int priority,
   /* Initialize thread. */
   init_thread (t, name, priority);
   tid = t->tid = allocate_tid ();
+
+  /* Prepare thread for first run by initializing its stack.
+     Do this atomically so intermediate values for the 'stack' 
+     member cannot be observed. */
+  old_level = intr_disable ();
 
   /* Stack frame for kernel_thread(). */
   kf = alloc_frame (t, sizeof *kf);
@@ -218,6 +226,8 @@ thread_create (const char *name, int priority,
   sf = alloc_frame (t, sizeof *sf);
   sf->eip = switch_entry;
   sf->ebp = 0;
+
+  intr_set_level (old_level);
 
   /* Add to run queue. */
   thread_unblock (t);
@@ -472,8 +482,6 @@ is_thread (struct thread *t)
 static void
 init_thread (struct thread *t, const char *name, int priority)
 {
-  enum intr_level old_level;
-
   ASSERT (t != NULL);
   ASSERT (PRI_MIN <= priority && priority <= PRI_MAX);
   ASSERT (name != NULL);
@@ -484,10 +492,7 @@ init_thread (struct thread *t, const char *name, int priority)
   t->stack = (uint8_t *) t + PGSIZE;
   t->priority = priority;
   t->magic = THREAD_MAGIC;
-
-  old_level = intr_disable ();
   list_push_back (&all_list, &t->allelem);
-  intr_set_level (old_level);
 }
 
 /* Allocates a SIZE-byte frame at the top of thread T's stack and
@@ -562,34 +567,6 @@ thread_schedule_tail (struct thread *prev)
       palloc_free_page (prev);
     }
 }
-/*
-   Remove sleeping thread from sleep_list, add it to ready_list
-   Note: called by schedule();
-*/
-
-static void
-update_sleep_thread_schedule(void) 
-{
-  struct list_elem *temp, *e = list_begin(&sleeping_list);
-  int64_t cur_ticks = timer_ticks();
-   
-//    e != list_begin(&sleeping_list);
-   while (e != list_end(&sleeping_list)){
-    struct thread *t = list_entry(e, struct thread,elem);
-    if (cur_ticks < t->wake_time){
-        break; 
-    }
-     enum intr_level old_level = intr_disable();
-       t->status = THREAD_READY;
-     //  thread_unblock(t); 
-     //  temp = e;
-       e = list_next(e);
-       list_pop_front(&sleeping_list);
-       list_push_back(&ready_list, &t->elem);
-     intr_set_level (old_level);
- }
-} 
-
 
 /* Schedules a new process.  At entry, interrupts must be off and
    the running process's state must have been changed from
@@ -601,16 +578,41 @@ update_sleep_thread_schedule(void)
 static void
 schedule (void) 
 {
-  update_sleep_thread_schedule();
   struct thread *cur = running_thread ();
-  struct thread *next = next_thread_to_run ();
+  //struct thread *next = next_thread_to_run ();
   struct thread *prev = NULL;
 
   ASSERT (intr_get_level () == INTR_OFF);
   ASSERT (cur->status != THREAD_RUNNING);
-  ASSERT (is_thread (next));
- 
- 
+  //ASSERT (is_thread (next));
+/* Modify schedule code */
+  struct list_elem *temp, *e = list_begin(&sleeping_list);
+
+  /*
+  if(!list_empty(&sleeping_list)) {
+  	struct list_elem *temp, *e = list_pop_front(&sleeping_list);
+  }
+  else{
+	struct list_elem *temp, *e = list_begin(&sleeping_list);
+  }
+  */
+
+  int64_t cur_ticks = timer_ticks();
+  
+  while(e != list_end(&sleeping_list)){
+    struct thread *t = list_entry(e, struct thread, elem);
+    
+    if(cur_ticks >= t->wake_time){
+      t->status = THREAD_READY;
+      temp = e;
+      e = list_next(e);
+      list_remove(temp);
+      list_push_back(&ready_list,&t->elem);
+    }else break;
+   }
+
+  struct thread *next = next_thread_to_run ();
+  ASSERT(is_thread (next));
   if (cur != next)
     prev = switch_threads (cur, next);
   thread_schedule_tail (prev);
@@ -634,7 +636,8 @@ allocate_tid (void)
    Used by switch.S, which can't figure it out on its own. */
 uint32_t thread_stack_ofs = offsetof (struct thread, stack);
 
-bool cmp_ticks (const struct list_elem *a, const struct list_elem *b, void *aux UNUSED)
+static bool 
+cmp_ticks (const struct list_elem *a, const struct list_elem *b, void *aux UNUSED)
 {
    struct thread *ta = list_entry(a, struct thread, elem);
    struct thread *tb = list_entry(b, struct thread, elem);

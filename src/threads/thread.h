@@ -4,16 +4,14 @@
 #include <debug.h>
 #include <list.h>
 #include <stdint.h>
-/* List of sleeping thread*/
-static struct list sleeping_list;
 
 /* States in a thread's life cycle. */
 enum thread_status
   {
     THREAD_RUNNING,     /* Running thread. */
     THREAD_READY,       /* Not running but ready to run. */
-    THREAD_SLEEPING,   /* New state of thread */
     THREAD_BLOCKED,     /* Waiting for an event to trigger. */
+    THREAD_SLEEPING,    /* New state for sleeping threads*/
     THREAD_DYING        /* About to be destroyed. */
   };
 
@@ -73,7 +71,7 @@ typedef int tid_t;
          instead.
 
    The first symptom of either of these problems will probably be
-an assertion failure in thread_current(), which checks that
+   an assertion failure in thread_current(), which checks that
    the `magic' member of the running thread's `struct thread' is
    set to THREAD_MAGIC.  Stack overflow will normally change this
    value, triggering the assertion. */
@@ -100,13 +98,9 @@ struct thread
     /* Owned by userprog/process.c. */
     uint32_t *pagedir;                  /* Page directory. */
 #endif
-
+    int64_t wake_time;                 /*The time a thread needed to sleep*/
     /* Owned by thread.c. */
     unsigned magic;                     /* Detects stack overflow. */
-   
-    /* add wake time to thread struct */
-   int64_t wake_time;
-
   };
 
 /* If false (default), use round-robin scheduler.
@@ -145,7 +139,7 @@ void thread_set_nice (int);
 int thread_get_recent_cpu (void);
 int thread_get_load_avg (void);
 
-/* the implementation of time sleep,Added functions*/
+/* Declare thread_sleep*/
 void thread_sleep(int64_t ticks);
-bool cmp_ticks (const struct list_elem *a, const struct list_elem *b, void * aux UNUSED);
+
 #endif /* threads/thread.h */
