@@ -77,6 +77,19 @@ static tid_t allocate_tid (void);
 */
 static struct list sleeping_list;
 
+/* Compare priority of threads for inserting into ready list */
+static bool
+cmp_priority (const struct list_elem *a, const struct list_elem *b, void *aux UNUSED)
+{
+   struct thread *ta = list_entry (a, struct thread, elem);
+   struct thread *tb = list_entry (b, struct thread, elem);
+   if (ta->priority > tb->priority)
+   {
+      return true;
+   }    
+  return false;
+}
+
 /* Make current thread transfer to sleep state*/
 void thread_sleep(int64_t ticks){
    struct thread *cur = thread_current();
@@ -262,14 +275,26 @@ thread_block (void)
 void
 thread_unblock (struct thread *t) 
 {
+  struct thread *current;
   enum intr_level old_level;
 
   ASSERT (is_thread (t));
 
   old_level = intr_disable ();
   ASSERT (t->status == THREAD_BLOCKED);
-  list_push_back (&ready_list, &t->elem);
+  //Code added for priority scheduling
+  //list_push_back (&ready_list, &t->elem);
+  list_insert_ordered(&ready_list, &t->elem, cmp_priority, NULL);
   t->status = THREAD_READY;
+  current = thread_current();
+  // t -> is new thread in system
+  // current -> currently running thread
+  if(t->priority > current->priority && current!=idle_thread)
+  {
+    //yeild to CPU for new thread of higher priority
+    thread_yield();
+  }
+
   intr_set_level (old_level);
 }
 
@@ -327,6 +352,9 @@ thread_exit (void)
   NOT_REACHED ();
 }
 
+
+
+
 /* Yields the CPU.  The current thread is not put to sleep and
    may be scheduled again immediately at the scheduler's whim. */
 void
@@ -338,8 +366,10 @@ thread_yield (void)
   ASSERT (!intr_context ());
 
   old_level = intr_disable ();
-  if (cur != idle_thread) 
-    list_push_back (&ready_list, &cur->elem);
+  if (cur != idle_thread) {
+    //list_push_back (&ready_list, &cur->elem);
+    list_insert_ordered(&ready_list, &cur->elem, cmp_priority, NULL);
+  }
   cur->status = THREAD_READY;
   schedule ();
   intr_set_level (old_level);
@@ -648,3 +678,4 @@ cmp_ticks (const struct list_elem *a, const struct list_elem *b, void *aux UNUSE
    return false;
 
 }
+
