@@ -1,5 +1,1 @@
-FAIL
-Kernel panic in run: PANIC at ../../threads/synch.c:195 in lock_acquire(): assertion `lock != NULL' failed.
-Call stack: 0xc00284be
-Translation of call stack:
-0xc00284be: debug_panic (.../../lib/kernel/debug.c:38)
+PASS

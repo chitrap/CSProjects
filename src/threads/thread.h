@@ -5,15 +5,29 @@
 #include <list.h>
 #include <stdint.h>
 
+#include "synch.h"
+
 /* States in a thread's life cycle. */
 enum thread_status
   {
     THREAD_RUNNING,     /* Running thread. */
     THREAD_READY,       /* Not running but ready to run. */
+    THREAD_SLEEPING,   /* New state of thread */
     THREAD_BLOCKED,     /* Waiting for an event to trigger. */
-    THREAD_SLEEPING,    /* New state for sleeping threads*/
     THREAD_DYING        /* About to be destroyed. */
   };
+
+//Adding child struct 
+   struct child_process
+    {
+      int pid;    //pid of thread
+      int load;   // load status code
+      int status; // exit status code
+      bool wait;  // for waiting purpose
+      bool exit;  // for exit checking
+      struct lock wait_lock;
+      struct list_elem elem;
+    };
 
 /* Thread identifier type.
    You can redefine this to whatever type you like. */
@@ -71,7 +85,7 @@ typedef int tid_t;
          instead.
 
    The first symptom of either of these problems will probably be
-   an assertion failure in thread_current(), which checks that
+an assertion failure in thread_current(), which checks that
    the `magic' member of the running thread's `struct thread' is
    set to THREAD_MAGIC.  Stack overflow will normally change this
    value, triggering the assertion. */
@@ -98,9 +112,38 @@ struct thread
     /* Owned by userprog/process.c. */
     uint32_t *pagedir;                  /* Page directory. */
 #endif
-    int64_t wake_time;                 /*The time a thread needed to sleep*/
+
     /* Owned by thread.c. */
     unsigned magic;                     /* Detects stack overflow. */
+   
+    /* add wake time to thread struct */
+   int64_t wake_time;
+   /* added struct, used for scheduling prioirity */
+   /* to keep track of initial priority after donation*/
+   int init_priority;
+   /* mainly used to keep track of previous lock holder,
+      especialy useful to deal with nest lock, and chain lock
+      situation.
+    */
+   struct lock *waiting_lock;
+   /* This data structure is used to handle multiple donation 
+      situation, when main thread hold multiple locks, it is necessary
+      to keep track of all donor so that the main thread can revert back
+      to right priority instead of initial priority.
+   */
+   struct list donor_list;
+   struct list_elem donor_elem;
+
+   //For project of Userprog
+   struct list child_list;  //keep child processes
+   struct thread *parent;   //keep parent thread
+   struct child_process *chp; //pointer to child_process in parent's list of child
+   struct lock child_cond_lock; //lock associated with cond var of child
+   struct condition child_condition; //cond var for indicating child's status
+   struct list files_owned_list;     //for handling file sys calls we need file list
+   int file_desc; //file discriptor
+
+  
   };
 
 /* If false (default), use round-robin scheduler.
@@ -139,7 +182,12 @@ void thread_set_nice (int);
 int thread_get_recent_cpu (void);
 int thread_get_load_avg (void);
 
-/* Declare thread_sleep*/
+/* the implementation of time sleep,Added functions*/
 void thread_sleep(int64_t ticks);
-
+bool cmp_ticks (const struct list_elem *a, const struct list_elem *b, void * aux UNUSED);
+bool cmp_priority(const struct list_elem *a, const struct list_elem *b, void *aux UNUSED);
+void yield_to_max_priority_thread(void);
+void donate_priority (void);
+void refresh_donor_list (struct lock *lock);
+void update_priority (void);
 #endif /* threads/thread.h */

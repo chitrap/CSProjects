@@ -1,4 +1,4 @@
-qemu -hda /tmp/ERv6sjtVk0.dsk -m 4 -net none -nographic -monitor null
+qemu -hda /tmp/aB8ofEtx_A.dsk -m 4 -net none -nographic -monitor null
 PiLo hda1
 Loading.........
 Kernel command line: -q run alarm-multiple
